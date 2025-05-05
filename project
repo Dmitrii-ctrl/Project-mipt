@@ -13,3 +13,132 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from io import BytesIO
 import os
+from datetime import datetime
+
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO,
+    filename='bot.log' 
+)
+logger = logging.getLogger(__name__)
+
+class ExpenseTrackerBot:
+    def __init__(self):
+        self.init_db()
+        self.categories = [
+            "🍎 Еда", "🚕 Транспорт", "🏠 Жилье", 
+            "🎉 Развлечения", "👕 Одежда", "🏥 Здоровье"
+        ]
+        
+    def init_db(self):
+        """Инициализация базы данных"""
+        self.conn = sqlite3.connect('data/expenses.db', check_same_thread=False)
+        cursor = self.conn.cursor()
+        cursor.execute('''
+        CREATE TABLE IF NOT EXISTS expenses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER,
+            username TEXT,
+            amount REAL,
+            category TEXT,
+            description TEXT,
+            date TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        ''')
+        self.conn.commit()
+
+    def start(self, update: Update, context: CallbackContext) -> None:
+        """Обработка команды /start"""
+        user = update.effective_user
+        update.message.reply_markdown_v2(
+            f"Привет, {user.mention_markdown_v2()}\! Я помогу тебе учитывать расходы\.\n\n"
+            "*Доступные команды:*\n"
+            "➖ `/add` \- добавить расход\n"
+            "📊 `/stats` \- статистика расходов\n"
+            "🗑️ `/clear` \- очистить историю\n"
+            "🛒 `/categories` \- список категорий"
+        )
+
+    def add_expense(self, update: Update, context: CallbackContext) -> None:
+        """Добавление расхода через интерактивное меню"""
+        keyboard = [
+            [InlineKeyboardButton(cat, callback_data=f"add_{cat[2:]}")]
+            for cat in self.categories
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        update.message.reply_text("Выберите категорию:", reply_markup=reply_markup)
+
+    def save_expense(self, update: Update, context: CallbackContext) -> None:
+        """Сохранение расхода в БД"""
+        query = update.callback_query
+        user = query.from_user
+        
+        data = query.data.split('_')
+        if len(data) != 3:
+            query.answer("Ошибка формата данных")
+            return
+            
+        amount = float(data[2])
+        category = data[1]
+        
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "INSERT INTO expenses (user_id, username, amount, category) VALUES (?, ?, ?, ?)",
+            (user.id, user.username, amount, category)
+        )
+        self.conn.commit()
+        
+        query.edit_message_text(f"✅ Добавлено: {amount} руб. в категорию {category}")
+
+    def show_stats(self, update: Update, context: CallbackContext) -> None:
+        """Показ статистики с графиком"""
+        user = update.effective_user
+        df = pd.read_sql(
+            f"SELECT category, SUM(amount) as total FROM expenses WHERE user_id = {user.id} GROUP BY category",
+            self.conn
+        )
+        
+        if df.empty:
+            update.message.reply_text("У вас пока нет записей о расходах.")
+            return
+        
+        plt.style.use('ggplot')
+        fig, ax = plt.subplots()
+        ax.pie(df['total'], labels=df['category'], autopct='%1.1f%%', startangle=90)
+        ax.axis('equal')
+        ax.set_title("Ваши расходы по категориям")
+        
+        buf = BytesIO()
+        plt.savefig(buf, format='png', dpi=100, bbox_inches='tight')
+        buf.seek(0)
+        plt.close()
+
+        total = df['total'].sum()
+        update.message.reply_photo(
+            photo=buf,
+            caption=f"📊 *Общие расходы:* {total:.2f} руб.\n\n"
+                    + "\n".join([f"▪️ {row['category']}: {row['total']} руб." for _, row in df.iterrows()]),
+            parse_mode='Markdown'
+        )
+        buf.close()
+
+    def run(self):
+        """Запуск бота"""
+        TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
+        if not TOKEN:
+            raise ValueError("Не указан TELEGRAM_BOT_TOKEN в переменных окружения")
+        
+        updater = Updater(TOKEN)
+        dispatcher = updater.dispatcher
+
+        dispatcher.add_handler(CommandHandler('start', self.start))
+        dispatcher.add_handler(CommandHandler('add', self.add_expense))
+        dispatcher.add_handler(CommandHandler('stats', self.show_stats))
+        dispatcher.add_handler(CallbackQueryHandler(self.save_expense, pattern="^add_"))
+        
+        updater.start_polling()
+        updater.idle()
+
+if __name__ == '__main__':
+    bot = ExpenseTrackerBot()
+    bot.run()
