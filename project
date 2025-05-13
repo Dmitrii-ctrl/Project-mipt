@@ -24,17 +24,17 @@ logger = logging.getLogger(__name__)
 
 class ExpenseTrackerBot:
     def __init__(self):
+        self.conn = sqlite3.connect('expenses.db', check_same_thread=False)
+        self.cursor = self.conn.cursor()
         self.init_db()
         self.categories = [
             "🍎 Еда", "🚕 Транспорт", "🏠 Жилье", 
             "🎉 Развлечения", "👕 Одежда", "🏥 Здоровье"
         ]
         
-    def init_db(self):
-        """Инициализация базы данных"""
-        self.conn = sqlite3.connect('data/expenses.db', check_same_thread=False)
-        cursor = self.conn.cursor()
-        cursor.execute('''
+    def _init_db(self):
+        """Инициализация структуры БД"""
+        self.cursor.execute('''
         CREATE TABLE IF NOT EXISTS expenses (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             user_id INTEGER,
