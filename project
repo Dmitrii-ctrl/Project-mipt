@@ -1,4 +1,5 @@
-```import logging
+```
+import logging
 logging.basicConfig(
     filename='botlog',
     level=logging.INFO,
@@ -143,4 +144,5 @@ class ExpenseTrackerBot:
 
 if __name__ == '__main__':
     bot = ExpenseTrackerBot()
-    bot.run()```
+    bot.run()
+```
