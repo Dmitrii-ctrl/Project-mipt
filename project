@@ -1,4 +1,4 @@
-```
+
 import logging
 logging.basicConfig(
     filename='botlog',
@@ -145,4 +145,3 @@ class ExpenseTrackerBot:
 if __name__ == '__main__':
     bot = ExpenseTrackerBot()
     bot.run()
-```
